@@ -45,3 +45,14 @@ class BudgetCreate(BaseModel):
     category_id: int
     month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     amount_paise: int = Field(gt=0)
+
+
+class AITransactionSuggestion(BaseModel):
+    amount_paise: int | None
+    category: str | None
+    type: Literal["income", "expense"] | None
+    needs_clarification: bool
+
+
+class AITransactionRequest(BaseModel):
+    description: str = Field(min_length=1, max_length=300)

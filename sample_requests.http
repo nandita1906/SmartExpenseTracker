@@ -1,0 +1,86 @@
+### Smart Expense Tracker API — Sample Requests
+
+@baseUrl = http://127.0.0.1:8000
+@token = PASTE_YOUR_ACCESS_TOKEN_HERE
+
+### 1. API health check
+GET {{baseUrl}}/
+
+### 2. Register a new user
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "demo@example.com",
+  "password": "DemoPass123!"
+}
+
+### 3. Login
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "demo@example.com",
+  "password": "DemoPass123!"
+}
+
+### 4. Get authenticated user
+GET {{baseUrl}}/me
+Authorization: Bearer {{token}}
+
+### 5. List categories
+GET {{baseUrl}}/categories
+Authorization: Bearer {{token}}
+
+### 6. Create an expense transaction
+POST {{baseUrl}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount_paise": 20000,
+  "type": "expense",
+  "date": "2026-10-20",
+  "note": "Lunch",
+  "payment_method": "cash",
+  "category_id": 1
+}
+
+### 7. List transactions
+GET {{baseUrl}}/transactions
+Authorization: Bearer {{token}}
+
+### 8. Filter transactions by date range
+GET {{baseUrl}}/transactions?start_date=2026-10-01&end_date=2026-10-20
+Authorization: Bearer {{token}}
+
+### 9. Get custom-range report
+GET {{baseUrl}}/reports/summary?start_date=2026-10-01&end_date=2026-10-20
+Authorization: Bearer {{token}}
+
+### 10. Get monthly report
+GET {{baseUrl}}/reports/monthly
+Authorization: Bearer {{token}}
+
+### 11. AI transaction categorization
+POST {{baseUrl}}/ai/categorize
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "description": "Paid 200 rupees for lunch"
+}
+
+### 12. Validation test — zero amount should be rejected
+POST {{baseUrl}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount_paise": 0,
+  "type": "expense",
+  "date": "2026-10-20",
+  "note": "Invalid amount test",
+  "payment_method": "cash",
+  "category_id": 1
+}

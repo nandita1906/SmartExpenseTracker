@@ -1,9 +1,18 @@
-
 from sqlalchemy import (
-    Column, Integer, String, Date, ForeignKey,
-    UniqueConstraint, Index
+    Column,
+    Integer,
+    String,
+    Date,
+    ForeignKey,
+    UniqueConstraint,
+    Index,
+    Boolean,
+    DateTime,
+    JSON,
+    func,
 )
 from sqlalchemy.orm import relationship
+
 from app.database import Base
 
 
@@ -52,7 +61,9 @@ class Budget(Base):
     __tablename__ = "budgets"
 
     id = Column(Integer, primary_key=True, index=True)
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
+    category_id = Column(
+        Integer, ForeignKey("categories.id"), nullable=False
+    )
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     month = Column(String(7), nullable=False)
     amount_paise = Column(Integer, nullable=False)
@@ -61,8 +72,32 @@ class Budget(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "category_id", "month",
-            name="uq_user_category_month"
+            "user_id",
+            "category_id",
+            "month",
+            name="uq_user_category_month",
         ),
     )
-from datetime import date
+
+
+class AISuggestionCache(Base):
+    __tablename__ = "ai_suggestion_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
+    input_hash = Column(String(64), nullable=False)
+    suggestion = Column(JSON, nullable=False)
+    needs_clarification = Column(Boolean, nullable=False, default=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "input_hash",
+            name="uq_ai_cache_user_input",
+        ),
+    )

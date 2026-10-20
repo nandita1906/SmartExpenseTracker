@@ -1,6 +1,6 @@
-
 import re
 import hashlib
+import logging
 from datetime import date
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -17,6 +17,9 @@ from app.auth import (
     create_token,
     get_current_user,
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
 
@@ -154,8 +157,10 @@ def get_transactions(
         category = db.query(models.Category).filter_by(
             id=category_id, user_id=user.id
         ).first()
+
         if not category:
             raise HTTPException(404, "Category not found")
+
         query = query.filter(
             models.Transaction.category_id == category_id
         )
@@ -267,6 +272,7 @@ def create_category(
     user=Depends(get_current_user),
 ):
     name = data.name.strip()
+
     if not name:
         raise HTTPException(400, "Category name cannot be empty")
 
@@ -319,7 +325,8 @@ def delete_category(
 
     if used_by_transaction or used_by_budget:
         raise HTTPException(
-            409, "Cannot delete a category used by transactions or budgets"
+            409,
+            "Cannot delete a category used by transactions or budgets",
         )
 
     db.delete(category)
@@ -354,6 +361,7 @@ def create_budget(
         raise HTTPException(400, "Budget already exists or is invalid")
 
     db.refresh(budget)
+
     return {"message": "Budget created", "id": budget.id}
 
 
@@ -434,10 +442,14 @@ def monthly_report(
     }
 
     category_totals = {}
-    for t in transactions:
-        if t.type == "expense" and t.category_id is not None:
-            category_totals[t.category_id] = (
-                category_totals.get(t.category_id, 0) + t.amount_paise
+    for transaction in transactions:
+        if (
+            transaction.type == "expense"
+            and transaction.category_id is not None
+        ):
+            category_totals[transaction.category_id] = (
+                category_totals.get(transaction.category_id, 0)
+                + transaction.amount_paise
             )
 
     top_expenses = sorted(
@@ -453,11 +465,11 @@ def monthly_report(
         "savings_paise": income - expenses,
         "spending_by_category": [
             {
-                "category_id": cid,
-                "category": category_names.get(cid, "Unknown"),
+                "category_id": category_id,
+                "category": category_names.get(category_id, "Unknown"),
                 "amount_paise": amount,
             }
-            for cid, amount in category_totals.items()
+            for category_id, amount in category_totals.items()
         ],
         "top_5_expenses": [
             {
@@ -501,10 +513,14 @@ def report_summary(
     }
 
     category_totals = {}
-    for t in transactions:
-        if t.type == "expense" and t.category_id is not None:
-            category_totals[t.category_id] = (
-                category_totals.get(t.category_id, 0) + t.amount_paise
+    for transaction in transactions:
+        if (
+            transaction.type == "expense"
+            and transaction.category_id is not None
+        ):
+            category_totals[transaction.category_id] = (
+                category_totals.get(transaction.category_id, 0)
+                + transaction.amount_paise
             )
 
     top_expenses = sorted(
@@ -521,11 +537,11 @@ def report_summary(
         "savings_paise": income - expenses,
         "spending_by_category": [
             {
-                "category_id": cid,
-                "category": category_names.get(cid, "Unknown"),
+                "category_id": category_id,
+                "category": category_names.get(category_id, "Unknown"),
                 "amount_paise": amount,
             }
-            for cid, amount in category_totals.items()
+            for category_id, amount in category_totals.items()
         ],
         "top_5_expenses": [
             {
@@ -552,9 +568,11 @@ def categorize_transaction(
         raise HTTPException(400, "Description cannot be empty")
 
     safe_description = sanitize_description(description)
+
     if not safe_description:
         raise HTTPException(
-            400, "Description does not contain recognizable transaction details"
+            400,
+            "Description does not contain recognizable transaction details",
         )
 
     input_hash = hashlib.sha256(
@@ -570,18 +588,22 @@ def categorize_transaction(
         suggestion = schemas.AITransactionSuggestion.model_validate(
             cached.suggestion
         )
+
         message = (
             "Please clarify the transaction"
             if suggestion.needs_clarification
             else "Please confirm this suggestion before saving"
         )
+
         result = {
             "message": message,
             "suggestion": suggestion.model_dump(),
             "cache": "hit",
         }
+
         if not suggestion.needs_clarification:
             result["saved"] = False
+
         return result
 
     try:
@@ -591,10 +613,10 @@ def categorize_transaction(
             suggestion.amount_paise is not None
             and suggestion.amount_paise <= 0
         ):
-            raise HTTPException(502, "AI returned an invalid amount")
+            raise ValueError("AI returned an invalid amount")
 
         if suggestion.type not in (None, "income", "expense"):
-            raise HTTPException(502, "AI returned an invalid transaction type")
+            raise ValueError("AI returned an invalid transaction type")
 
         if not suggestion.needs_clarification and (
             suggestion.amount_paise is None
@@ -602,39 +624,39 @@ def categorize_transaction(
             or not suggestion.category.strip()
             or suggestion.type is None
         ):
-            raise HTTPException(
-                502, "AI returned incomplete transaction details"
-            )
+            raise ValueError("AI returned incomplete transaction details")
 
-    except HTTPException:
-        raise
     except Exception as exc:
-        error_text = repr(exc)
-        print("AI service error:", error_text)
+        # Full diagnostic goes to the server terminal, not the API response.
+        logger.exception("AI categorization failed")
 
-        if isinstance(exc, RuntimeError) and "API key" in str(exc):
-            raise HTTPException(503, "AI service is not configured")
+        error_text = repr(exc).upper()
+
+        if isinstance(exc, RuntimeError) and "API KEY" in str(exc).upper():
+            raise HTTPException(503, "AI service is not configured") from exc
 
         if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
             raise HTTPException(
                 429, "AI rate limit reached. Please try again later."
-            )
+            ) from exc
 
-        if (
-            "504" in error_text
-            or "DEADLINE_EXCEEDED" in error_text
-            or "timeout" in error_text.lower()
-        ):
+        if any(term in error_text for term in (
+            "504", "DEADLINE_EXCEEDED", "TIMEOUT"
+        )):
             raise HTTPException(
                 504, "AI request timed out. Please try again."
-            )
+            ) from exc
 
-        if "503" in error_text or "UNAVAILABLE" in error_text:
+        if any(term in error_text for term in (
+            "503", "UNAVAILABLE"
+        )):
             raise HTTPException(
                 503, "AI service is temporarily unavailable."
-            )
+            ) from exc
 
-        raise HTTPException(502, "AI service returned an invalid response.")
+        raise HTTPException(
+            502, "AI service returned an invalid response."
+        ) from exc
 
     cache_entry = models.AISuggestionCache(
         user_id=user.id,
@@ -642,23 +664,27 @@ def categorize_transaction(
         suggestion=suggestion.model_dump(mode="json"),
         needs_clarification=suggestion.needs_clarification,
     )
+
     db.add(cache_entry)
 
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
+        logger.warning("AI suggestion cache entry already exists")
 
     message = (
         "Please clarify the transaction"
         if suggestion.needs_clarification
         else "Please confirm this suggestion before saving"
     )
+
     result = {
         "message": message,
         "suggestion": suggestion.model_dump(),
         "cache": "miss",
     }
+
     if not suggestion.needs_clarification:
         result["saved"] = False
 
